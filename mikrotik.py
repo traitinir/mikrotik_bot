@@ -1,16 +1,13 @@
 from routeros_api import RouterOsApiPool
 import time
-import logging
-
-logger = logging.getLogger(__name__)
 
 class MikroTik:
     def __init__(self):
         self.api = None
         self.connection = None
     
-    def connect(self, host, user, password, port=8754):
-        """Conecta al MikroTik - Versión para Render"""
+    def connect(self, host, user, password, port=8754):  # ← 8754 por defecto
+        """Conecta al MikroTik"""
         print(f"🔗 Conectando a {host}:{port}...")
         
         try:
@@ -18,37 +15,26 @@ class MikroTik:
                 host=host,
                 username=user,
                 password=password,
-                port=port,
+                port=port,  # ← Usa el puerto que se pase
                 plaintext_login=True,
                 use_ssl=False,
-                timeout=20,
-                max_connections=1
+                timeout=15
             )
             
             self.api = self.connection.get_api()
             
-            # Probar conexión
+            # Probar conexión rápida
             test = self.api.get_resource('/system/resource').get()
             if test:
-                print(f"✅ Conectado a {test[0].get('board-name', 'MikroTik')}")
+                print(f"✅ Conectado a: {test[0].get('board-name', 'MikroTik')}")
                 return True
             
         except Exception as e:
-            error_msg = str(e)
-            print(f"❌ Error: {error_msg}")
-            
-            # Diagnóstico específico
-            if "Connection refused" in error_msg:
-                print("   🔥 Puerto bloqueado o API no habilitada")
-            elif "timeout" in error_msg.lower():
-                print("   ⏰ Timeout - El router no responde")
-            elif "authentication" in error_msg.lower():
-                print("   🔐 Error de usuario/contraseña")
-            
+            print(f"❌ Error conexión: {e}")
             return False
     
     def get_status(self):
-        """Obtiene estado del sistema"""
+        """Obtiene estado básico"""
         if not self.api:
             return None
         
@@ -60,19 +46,7 @@ class MikroTik:
                 'cpu': data.get('cpu-load', '0'),
                 'uptime': data.get('uptime', '0s'),
                 'model': data.get('board-name', 'Desconocido'),
-                'version': data.get('version', 'Desconocido'),
-                'memory_percent': 'N/A'
+                'version': data.get('version', 'Desconocido')
             }
         except:
             return None
-    
-    def get_wifi_clients(self):
-        """Obtiene clientes WiFi"""
-        if not self.api:
-            return []
-        
-        try:
-            clients = self.api.get_resource('/interface/wireless/registration-table').get()
-            return clients
-        except:
-            return []
