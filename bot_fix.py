@@ -1,262 +1,154 @@
-import logging
-import sys
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
+import logging
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
 
 # Configurar logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    stream=sys.stdout
+    level=logging.INFO
 )
 
-# Importar configuración DESPUÉS de logging
-try:
-    # Cargar variables de entorno manualmente primero
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    # Ahora importar Config
-    from config import Config
-    from mikrotik import MikroTik
-except ImportError as e:
-    logging.error(f"❌ Error importando módulos: {e}")
-    # Configuración manual si falla
-    class ConfigManual:
-        TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-        ALLOWED_CHAT_IDS = [id.strip() for id in os.getenv('ALLOWED_CHAT_IDS', '').split(',') if id.strip()]
-        MIKROTIK_HOST = os.getenv('MIKROTIK_HOST', '152.231.27.30')
-        MIKROTIK_PORT = int(os.getenv('MIKROTIK_PORT', '8754'))
-        MIKROTIK_USER = os.getenv('MIKROTIK_USER', '')
-        MIKROTIK_PASS = os.getenv('MIKROTIK_PASS', '')
-    
-    Config = ConfigManual
-    from mikrotik import MikroTik
+# Cargar configuración desde variables de entorno
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8523995546:AAGeWFFpTeh6dsK-DKlSolJclNQB9St_GxE')
+ALLOWED_CHAT_IDS = os.getenv('ALLOWED_CHAT_IDS', '-1003633043572').split(',')
 
-# Inicializar MikroTik
-router = MikroTik()
+# Configuración MikroTik con PUERTO 8754
+MIKROTIK_HOST = os.getenv('MIKROTIK_HOST', '152.231.27.30')
+MIKROTIK_PORT = int(os.getenv('MIKROTIK_PORT', '8754'))  # ← TU PUERTO 8754
+MIKROTIK_USER = os.getenv('MIKROTIK_USER', 'apii')
+MIKROTIK_PASS = os.getenv('MIKROTIK_PASS', '')
 
-def check_access(user_id):
-    """Verifica si el usuario/chat tiene acceso"""
-    if not Config.ALLOWED_CHAT_IDS:
+print("=" * 50)
+print("🤖 BOT MIKROTIK - RENDER.COM (PUERTO 8754)")
+print("=" * 50)
+print(f"✅ Token: {TOKEN[:10]}...")
+print(f"✅ MikroTik: {MIKROTIK_HOST}:{MIKROTIK_PORT}")
+print(f"✅ Usuario: {MIKROTIK_USER}")
+print("=" * 50)
+
+def check_access(chat_id):
+    """Verifica acceso del usuario"""
+    if not ALLOWED_CHAT_IDS or ALLOWED_CHAT_IDS == ['']:
         return True
-    return str(user_id) in Config.ALLOWED_CHAT_IDS
+    return str(chat_id) in ALLOWED_CHAT_IDS
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     """Comando /start"""
-    if not update.message:
+    if not check_access(update.effective_chat.id):
+        update.message.reply_text("❌ No tienes acceso.")
         return
     
-    user_id = str(update.effective_chat.id)
-    
-    if not check_access(user_id):
-        await update.message.reply_text("❌ No tienes acceso a este bot.")
-        return
-    
-    await update.message.reply_text(
+    update.message.reply_text(
         "🤖 *Bot MikroTik en Render.com*\n\n"
-        "✅ Conectado desde la nube\n\n"
+        f"🔌 Puerto configurado: {MIKROTIK_PORT}\n"
+        f"📡 IP: {MIKROTIK_HOST}\n\n"
         "📋 *Comandos disponibles:*\n"
-        "/status - Estado del router\n"
+        "/start - Este mensaje\n"
+        "/ping - Probar bot\n"
         "/test - Probar conexión MikroTik\n"
-        "/clients - Clientes WiFi\n"
-        "/help - Ayuda",
+        "/port - Ver puerto configurado",
         parse_mode='Markdown'
     )
 
-async def test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /test - Prueba conexión"""
-    if not update.message:
-        return
-    
-    user_id = str(update.effective_chat.id)
-    if not check_access(user_id):
-        return
-    
-    await update.message.reply_chat_action(action='typing')
-    
-    # Probar conexión al MikroTik
-    if not router.api:
-        connected = router.connect(
-            Config.MIKROTIK_HOST,
-            Config.MIKROTIK_USER,
-            Config.MIKROTIK_PASS,
-            Config.MIKROTIK_PORT
-        )
-        if not connected:
-            await update.message.reply_text(
-                "❌ *No pude conectar al MikroTik*\n\n"
-                f"Detalles:\n"
-                f"• IP: {Config.MIKROTIK_HOST}\n"
-                f"• Puerto: {Config.MIKROTIK_PORT}\n"
-                f"• Usuario: {Config.MIKROTIK_USER}",
-                parse_mode='Markdown'
-            )
-            return
-    
-    info = router.get_status()
-    if info:
-        await update.message.reply_text(
-            f"✅ *¡Todo funciona!*\n\n"
-            f"🤖 Bot: Conectado desde Render.com\n"
-            f"📡 MikroTik: {info['model']}\n"
-            f"🔧 Versión: {info['version']}\n"
-            f"📈 CPU: {info['cpu']}%\n"
-            f"⏱️ Uptime: {info['uptime']}",
-            parse_mode='Markdown'
-        )
-    else:
-        await update.message.reply_text("⚠️ Conectado pero sin datos")
+def ping(update: Update, context: CallbackContext):
+    """Comando /ping - Prueba básica"""
+    update.message.reply_text("🏓 ¡Pong! Bot activo desde Render")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /status"""
-    if not update.message:
-        return
-    
-    user_id = str(update.effective_chat.id)
-    if not check_access(user_id):
-        return
-    
-    await update.message.reply_chat_action(action='typing')
-    
-    if not router.api:
-        connected = router.connect(
-            Config.MIKROTIK_HOST,
-            Config.MIKROTIK_USER,
-            Config.MIKROTIK_PASS,
-            Config.MIKROTIK_PORT
-        )
-        if not connected:
-            await update.message.reply_text("❌ No pude conectar al router")
-            return
-    
-    info = router.get_status()
-    if not info:
-        await update.message.reply_text("❌ Error al obtener información")
-        return
-    
-    message = (
-        f"📊 *Estado del Router*\n\n"
-        f"🖥️ Modelo: {info['model']}\n"
-        f"🔧 Versión: {info['version']}\n"
-        f"⏱️ Uptime: {info['uptime']}\n"
-        f"📈 CPU: {info['cpu']}%\n"
-        f"💾 Memoria: {info.get('memory_percent', 'N/A')}\n\n"
-        f"_Consulta desde Render.com_"
+def port_info(update: Update, context: CallbackContext):
+    """Comando /port - Ver configuración de puerto"""
+    update.message.reply_text(
+        f"🔌 *Configuración de Puerto*\n\n"
+        f"IP: `{MIKROTIK_HOST}`\n"
+        f"Puerto: `{MIKROTIK_PORT}`\n"
+        f"Usuario: `{MIKROTIK_USER}`\n\n"
+        f"_Esta es la configuración actual en Render_",
+        parse_mode='Markdown'
     )
-    
-    await update.message.reply_text(message, parse_mode='Markdown')
 
-async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /clients"""
-    if not update.message:
+def test(update: Update, context: CallbackContext):
+    """Comando /test - Probar conexión a MikroTik"""
+    if not check_access(update.effective_chat.id):
         return
     
-    user_id = str(update.effective_chat.id)
-    if not check_access(user_id):
-        return
-    
-    await update.message.reply_chat_action(action='typing')
-    
-    if not router.api:
-        connected = router.connect(
-            Config.MIKROTIK_HOST,
-            Config.MIKROTIK_USER,
-            Config.MIKROTIK_PASS,
-            Config.MIKROTIK_PORT
-        )
-        if not connected:
-            await update.message.reply_text("❌ No pude conectar al router")
-            return
-    
-    clients_list = router.get_wifi_clients()
-    
-    if not clients_list:
-        await update.message.reply_text("📶 *No hay clientes WiFi conectados*", parse_mode='Markdown')
-        return
-    
-    message = "📱 *Clientes WiFi Conectados*\n\n"
-    
-    for i, client in enumerate(clients_list[:10], 1):
-        mac = client.get('mac', client.get('mac-address', 'Desconocido'))
-        signal = client.get('signal', '0dBm')
-        message += f"{i}. `{mac}`\n"
-        message += f"   📶 Señal: {signal}\n\n"
-    
-    if len(clients_list) > 10:
-        message += f"_Y {len(clients_list) - 10} clientes más..._"
-    
-    await update.message.reply_text(message, parse_mode='Markdown')
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /help"""
-    if not update.message:
-        return
-    
-    user_id = str(update.effective_chat.id)
-    if not check_access(user_id):
-        return
-    
-    help_text = (
-        "📖 *Comandos Disponibles*\n\n"
-        "/start - Iniciar el bot\n"
-        "/test - Probar conexión MikroTik\n"
-        "/status - Estado del router\n"
-        "/clients - Clientes WiFi\n"
-        "/help - Esta ayuda\n\n"
-        "🌐 *Hosteado en:* Render.com"
-    )
-    
-    await update.message.reply_text(help_text, parse_mode='Markdown')
-
-def main():
-    """Función principal para Render"""
-    print("=" * 50)
-    print("🤖 BOT MIKROTIK - RENDER.COM")
-    print("=" * 50)
-    
-    # Validar configuración básica
-    if not Config.TELEGRAM_TOKEN:
-        print("❌ ERROR: TELEGRAM_BOT_TOKEN no configurado")
-        print("   Agrega la variable de entorno en Render.com")
-        return
-    
-    print(f"✅ Token: {Config.TELEGRAM_TOKEN[:10]}...")
-    print(f"✅ MikroTik: {Config.MIKROTIK_HOST}:{Config.MIKROTIK_PORT}")
-    print(f"✅ Usuario: {Config.MIKROTIK_USER}")
+    update.message.reply_text(f"🔍 Probando conexión a {MIKROTIK_HOST}:{MIKROTIK_PORT}...")
     
     try:
-        # Crear aplicación
-        app = Application.builder().token(Config.TELEGRAM_TOKEN).build()
+        # Intentar conectar directamente con socket
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        
+        result = sock.connect_ex((MIKROTIK_HOST, MIKROTIK_PORT))
+        
+        if result == 0:
+            update.message.reply_text(f"✅ *Puerto {MIKROTIK_PORT} ABIERTO*\n\nEl puerto responde correctamente.", parse_mode='Markdown')
+            sock.close()
+            
+            # Ahora probar con la API
+            try:
+                from mikrotik import MikroTik
+                router = MikroTik()
+                connected = router.connect(MIKROTIK_HOST, MIKROTIK_USER, MIKROTIK_PASS, MIKROTIK_PORT)
+                
+                if connected:
+                    info = router.get_status()
+                    if info:
+                        update.message.reply_text(
+                            f"🎉 *¡Conexión API exitosa!*\n\n"
+                            f"Router: {info['model']}\n"
+                            f"Versión: {info['version']}\n"
+                            f"CPU: {info['cpu']}%\n"
+                            f"Uptime: {info['uptime']}",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        update.message.reply_text("⚠️ Conectado pero no se pudieron obtener datos")
+                else:
+                    update.message.reply_text("❌ Error en autenticación API (usuario/contraseña)")
+                    
+            except ImportError:
+                update.message.reply_text("ℹ️ Puerto abierto pero módulo API no disponible")
+            except Exception as e:
+                update.message.reply_text(f"⚠️ Error API: {str(e)[:100]}")
+                
+        else:
+            update.message.reply_text(
+                f"❌ *Puerto {MIKROTIK_PORT} CERRADO*\n\n"
+                f"Error código: {result}\n\n"
+                f"Verifica en tu MikroTik:\n"
+                f"1. API habilitada en puerto {MIKROTIK_PORT}\n"
+                f"2. Firewall permite puerto {MIKROTIK_PORT}\n"
+                f"3. IP {MIKROTIK_HOST} es accesible desde Internet",
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        update.message.reply_text(f"🔥 Error de prueba: {str(e)[:150]}")
+
+def main():
+    """Función principal"""
+    try:
+        # Crear updater (versión 13.15)
+        updater = Updater(token=TOKEN, use_context=True)
+        dispatcher = updater.dispatcher
         
         # Agregar comandos
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("test", test))
-        app.add_handler(CommandHandler("status", status))
-        app.add_handler(CommandHandler("clients", clients))
-        app.add_handler(CommandHandler("help", help_command))
+        dispatcher.add_handler(CommandHandler("start", start))
+        dispatcher.add_handler(CommandHandler("ping", ping))
+        dispatcher.add_handler(CommandHandler("test", test))
+        dispatcher.add_handler(CommandHandler("port", port_info))
         
-        print("✅ Bot configurado")
-        print("⏳ Iniciando...")
-        print("=" * 50)
-        print("📱 Ve a Telegram y escribe /start a tu bot")
-        print("=" * 50)
+        print("🤖 Bot iniciado correctamente")
+        print("📱 Escribe /start en Telegram para probar")
         
-        # Configuración para Render
-        app.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False
-        )
+        # Iniciar polling
+        updater.start_polling()
+        updater.idle()
         
     except Exception as e:
-        print(f"❌ ERROR: {type(e).__name__}")
-        print(f"   Detalle: {e}")
-        print("\n🔧 Soluciones comunes:")
-        print("   1. Verifica el token de Telegram")
-        print("   2. Asegúrate que las variables de entorno estén bien")
-        print("   3. El puerto 8757 debe estar abierto en tu MikroTik")
+        print(f"❌ Error iniciando bot: {e}")
+        print(f"🔧 Tipo: {type(e).__name__}")
 
 if __name__ == '__main__':
     main()
